@@ -7,7 +7,6 @@
 
 class Otp{
 private:
-  const int buffer_size = 100;
   char buffer[100];
   int buffer_fill;
   int buffer_location;
@@ -15,12 +14,12 @@ private:
   const char * filename;
 
 public:
+  const int buffer_size = 100;
+  
   Otp(char const *filename);
   ~Otp();
-  char generateRandomChar();
   int FillBuffer();
   int Encrypt(unsigned char* input_array, int size);
-  int Decrypt(unsigned char* input_array, int size);
 
 };
 

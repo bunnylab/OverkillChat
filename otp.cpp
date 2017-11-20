@@ -15,9 +15,12 @@ Otp::Otp(char const *filename){
 
   // try to open file and fill buffer
   otp_file = fopen(this->filename, "rb+");
-  if(otp_file!=NULL)
+  if(otp_file!=NULL){
     buffer_fill = this->FillBuffer();
-
+  }
+  else{
+    std::cout << "No File at " << filename << std::endl;
+  }
 }
 
 // Class destructor
@@ -25,10 +28,6 @@ Otp::~Otp(){
   fclose(otp_file);
 }
 
-// Random chars for overwriting
-char Otp::generateRandomChar(){
-  return (char) (rand() % 127 + 33);
-}
 
 // Get bits from keyfile until buffer is full
 int Otp::FillBuffer(){
@@ -40,15 +39,18 @@ int Otp::FillBuffer(){
   sz = ftell(otp_file);
   rewind(otp_file);
 
+  // if size(keyfile) is less than buffer_size
   if(sz<buffer_size && sz>0){
     fread(&buffer, 1, sz, otp_file);
     bytes_read = sz;
   }
+  // if keyfile is empty
   else if(sz<=0){
     std::cout << "Error: keyfile is empty" << std::endl;
     bytes_read = 0;
     return bytes_read;
   }
+  // else keyfile is greater than buffer_size
   else{
     fread(&buffer, 1, buffer_size, otp_file);
     bytes_read = buffer_size;
@@ -57,11 +59,10 @@ int Otp::FillBuffer(){
   std::cout << sz - bytes_read << " bytes left in keyfile" << std::endl;
 
   // Overwrite used keyfile and then delete that section
-  rewind(otp_file);  // do we need this?
+  rewind(otp_file);
   for(int i=0; i<bytes_read; ++i){
-    fputc(generateRandomChar(), otp_file);
+    fputc((char)(rand() % 127 + 33), otp_file);
   }
-
   // read in remaining keyfile
   char file_buffer[sz-bytes_read];
   fread(&file_buffer, 1, sz-bytes_read, otp_file);
@@ -77,51 +78,35 @@ int Otp::FillBuffer(){
 
 }
 
-int Otp::Encrypt(unsigned char* input_array, int size){
+// The output shows the last couple bytes of the temp Array
+// as consistently messed up check what's going on there
+// seems to work otherwise though
+int Otp::Encrypt(unsigned char input_array[], int size){
   char temp[size];
   int current_byte = 0;
 
   if(size < buffer_size - buffer_location){
-    memcpy(&temp, &buffer+buffer_location, size);
+    memcpy(temp, buffer+buffer_location, size);
     this->buffer_location += size;
   }
-  // lets maybe do an easier algorithm here, ban messages longer than our
-  // max buffer size and then do only one fill call if its too long
+  // ban messages longer than our max buffer size and then do only one fill call
   else{
+    std::cout << "Rolling over the buffer..." << std::endl;
     // copy remaining bytes to temp
-    while( (size-current_byte) > (buffer_size-buffer_location) ){
-      memcpy(&temp+current_byte, &buffer+buffer_location, buffer_size-buffer_location);
-      current_byte += buffer_size - buffer_location;
-      this->buffer_location = 0;
+    memcpy(temp, buffer+buffer_location, buffer_size-buffer_location);
+    current_byte += buffer_size - buffer_location;
 
-      std::cout << "trying to roll over the buffer" << std::endl;
-      this->buffer_fill = this->FillBuffer();
+    // fill buffer
+    this->buffer_fill = this->FillBuffer();
+    this->buffer_location = 0;
+
+    // finish copying to temp
+    memcpy(temp+current_byte, buffer, size-current_byte);
+    this->buffer_location += size-current_byte;
+
     }
-  }
-
-  //std::cout << temp << std::endl;
   for(int x=0; x<size; ++x){
-    //std::cout << x;
     input_array[x] = temp[x]^input_array[x];
   }
   return size;
-}
-
-int Otp::Decrypt(unsigned char* input_array, int size){
-  if(size > 100-buffer_location){
-    std::cout << "Input is too big for now" << std::endl;
-    return size;
-  } else{
-    std::cout << "doing some decrypting" << std::endl;
-    char temp[size];
-    memcpy(&temp, &buffer, size);
-
-    //std::cout << temp << std::endl;
-    for(int x=0; x<size; x++){
-      //std::cout << x;
-      input_array[x] = temp[x]^input_array[x];
-    }
-    //std::cout << output << std::endl;
-    return size;
-  }
 }

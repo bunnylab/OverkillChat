@@ -15,48 +15,23 @@
 
 using namespace std;
 
-// asyncRead
-void asyncRead(int* socket, int buff_size, Otp* pad){
-  char buffer[buff_size];
-  int n = 0;
-  while( (n = recv(*socket, buffer, buff_size, 0)) > 0){
-    if(memcmp(buffer, MESSAGE, 3) == 0){
-      string cipher_encode(buffer+3);
-      cout << "Recieving: " << cipher_encode << endl;
-      string cipher_decode = base64_decode(cipher_encode);
-      //cout << "Encoded Cipher: " << cipher_encode << endl;
-      cout << "Decoded Cipher: " << cipher_decode << endl;
-      // back to unsigned char!
-      unsigned char message_buffer[cipher_decode.size()];
-      strcpy( (char*) message_buffer, cipher_decode.c_str());
-      int x = pad->Decrypt(message_buffer, sizeof(message_buffer));
-      cout << "Decrypted Plaintext: " << message_buffer << endl;
-      //cout << buffer+3 << endl;
-      //cout << "peer: " << pad->Decrypt(buffer+3) << endl;
-
-    } else{
-      cout << endl << buffer;
-    }
-    flush(cout);
-    memset(buffer, 0, buff_size);
-  }
-
-}
+void asyncRecieve(int* socket, int buff_size, Otp* pad);
+const int buff_size = 1025;
 
 int main(int argc, char** argv){
-  const int buff_size = 1025;
   int sockfd;
   struct sockaddr_in servaddr;
   char buffer[buff_size];
 
   // check our arguments
-  if(argc != 4){
-      cout << "CLIENT address port keyfile\n";
+  if(argc != 5){
+      cout << "CLIENT address port keyfile_out keyfile_in\n";
       return 1;
     }
 
   // Initialize OTP
-  Otp one_time_pad = Otp(argv[3]);
+  Otp otp_out = Otp(argv[3]);
+  Otp otp_in = Otp(argv[4]);
 
   // setup sending socket and addresses
   memset(&servaddr, 0, sizeof(servaddr));
@@ -79,13 +54,9 @@ int main(int argc, char** argv){
 
   // read intro message
   cout << "Getting Welcome Message..." << endl;
-  //int n = 0;
-  //n=recv(sockfd, buffer, buff_size, 0);  // way to make this safe?
-  //cout << buffer << endl;
-  //memset(buffer, 0, sizeof(buffer));
 
   // create thread to listen for messages from server
-  thread tRead(asyncRead, &sockfd, buff_size, &one_time_pad);
+  thread tRead(asyncRecieve, &sockfd, buff_size, &otp_in);
 
   // send on socket using main loop
   cout << "Send Commands with #x default is messages" << endl;
@@ -96,26 +67,30 @@ int main(int argc, char** argv){
 
     // send command no encryption
     if(input_string[0]=='#'){
-      //cout << "did command" << endl;
       strcpy(buffer, input_string);
       send(sockfd , buffer , strlen(buffer) , 0 );
-
     }
-
     // send encrypted message
     else{
+      if(cin.gcount() > otp_out.buffer_size){
+        cout << "Message must be under" << otp_out.buffer_size << " bytes..." << endl;
+        continue;
+      }
 
       // This is so messy there has to be a way to simplify
       strcpy(buffer, "#m:");
       unsigned char message_buffer[strlen(input_string)];
       strcpy( (char*) message_buffer, input_string);
+
       // pass our message_buffer by reference to otp_encrypt
-      int test = one_time_pad.Encrypt(message_buffer, sizeof(message_buffer));
-      cout << "Length of encrypted message " << sizeof(message_buffer) << " " << test << endl;
-      cout << message_buffer << endl;
+      int bytes_encrypted = otp_out.Encrypt(message_buffer, sizeof(message_buffer));
+      if(bytes_encrypted <= 0){
+        cout << "Encryption Error... " << endl;
+        continue;
+      }
+
       string cipher_encode = base64_encode(message_buffer, sizeof(message_buffer));
       strcpy( buffer+3, cipher_encode.c_str());
-      cout << "Sending: " << buffer << endl;
       send(sockfd , buffer , strlen(buffer) , 0 );
     }
 
@@ -123,9 +98,28 @@ int main(int argc, char** argv){
   }
 
   tRead.join();  // make sure thread comes back
-  //strcpy(buffer, "This is a test\n");
-  //send(sockfd , buffer , strlen(buffer) , 0 );
-
 
   return 0;
+}
+
+
+// asyncRecieve
+void asyncRecieve(int* socket, int buff_size, Otp* pad){
+  char buffer[buff_size];
+  int n = 0;
+  while( (n = recv(*socket, buffer, buff_size, 0)) > 0){
+    if(memcmp(buffer, MESSAGE, 3) == 0){
+      string cipher_encode(buffer+3);
+      string cipher_decode = base64_decode(cipher_encode);
+      unsigned char message_buffer[cipher_decode.size()];
+      strcpy( (char*) message_buffer, cipher_decode.c_str());
+      int x = pad->Encrypt(message_buffer, sizeof(message_buffer));
+      cout << "Decrypted Plaintext: " << message_buffer << endl << endl;
+
+    } else{
+      cout << endl << buffer;
+    }
+    flush(cout);
+    memset(buffer, 0, buff_size);
+  }
 }
